@@ -100,14 +100,17 @@ class Host:
         print("Connected to SSH Server")
 
         # Connect to the Intermediary Server
-        async with websockets.connect(
-            "ws"
-            + ("s" if self.use_wss else "")
-            + "://"
-            + self.intermediary_ip
-            + "/"
-            + self.path.replace("/", "")
-        ) as _intermediary_server_websocket:
+        url = "ws"
+        if self.use_wss:
+            self.url += "s"
+        url += "://" + self.intermediary_ip
+        if not url.endswith("/"):
+            url += "/"
+        if self.path.startswith("/"):
+            url += self.path[1:]
+        else:
+            url += self.path
+        async with websockets.connect(url) as _intermediary_server_websocket:
             self.intermediary_server_websocket = _intermediary_server_websocket
 
             await asyncio.gather(
