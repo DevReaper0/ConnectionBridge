@@ -1,4 +1,4 @@
 cd "$(dirname "$0")"
 while true; do
-  python server.py
+  python main.py
 done
