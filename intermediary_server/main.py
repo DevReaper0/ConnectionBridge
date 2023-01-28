@@ -1,52 +1,105 @@
-import socket
-import select
+import asyncio
+import websockets
 
 # Constants
 INTERMEDIARY_SERVER_IP = "0.0.0.0"
 INTERMEDIARY_SERVER_PORT = 1234
 
-# Create socket for the intermediary server
-intermediary_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+ssh_host_websocket = None
+client_websocket = None
 
-# Bind the socket to the IP and port
-intermediary_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-intermediary_server_socket.bind((INTERMEDIARY_SERVER_IP, INTERMEDIARY_SERVER_PORT))
 
-# Listen for incoming connections
-intermediary_server_socket.listen()
+async def forward_to_ssh_host():
+    global client_websocket
 
-print("Ready!\n\n")
-while True:
-    # Wait for the SSH host to connect
-    ssh_host_socket, ssh_host_address = intermediary_server_socket.accept()
-    print(f"SSH host connected from {ssh_host_address}")
+    while True:
+        if ssh_host_websocket is None or client_websocket is None:
+            await asyncio.sleep(0)
+            continue
+        try:
+            data = await client_websocket.recv()
+        except (
+            websockets.exceptions.ConnectionClosedError,
+            websockets.exceptions.ConnectionClosedOK,
+        ):
+            client_websocket = None
+            await asyncio.sleep(0)
+            break
+        if not data:
+            await asyncio.sleep(0)
+            break
+        await ssh_host_websocket.send(data)
+        # print("Client -> SSH Host")
+        await asyncio.sleep(0)
 
-    # Wait for a client to connect
-    client_socket, client_address = intermediary_server_socket.accept()
-    print(f"Client connected from {client_address}")
 
-    # Keep track of the sockets that have data to be read
-    inputs = [ssh_host_socket, client_socket]
+async def forward_to_client():
+    global ssh_host_websocket
 
-    while inputs:
-        # Wait for data to be available on any of the sockets
-        readable, writable, exceptional = select.select(inputs, [], [])
+    while True:
+        if ssh_host_websocket is None or client_websocket is None:
+            await asyncio.sleep(0)
+            continue
+        try:
+            data = await ssh_host_websocket.recv()
+        except (
+            websockets.exceptions.ConnectionClosedError,
+            websockets.exceptions.ConnectionClosedOK,
+        ):
+            ssh_host_websocket = None
+            await asyncio.sleep(0)
+            break
+        if not data:
+            await asyncio.sleep(0)
+            break
+        await client_websocket.send(data)
+        # print("SSH Host -> Client")
+        await asyncio.sleep(0)
 
-        for s in readable:
-            # Receive data from the socket
-            data = s.recv(4096)
-            if not data:
-                # If the socket has closed, remove it from the list of inputs
-                inputs.remove(s)
-            else:
-                # Send the data to the other socket
-                if s == ssh_host_socket:
-                    target = client_socket
-                else:
-                    target = ssh_host_socket
-                target.sendall(data)
 
-    # Close the sockets
-    ssh_host_socket.close()
-    client_socket.close()
-    print("Client disconnected")
+async def handle_client(websocket):
+    global ssh_host_websocket, client_websocket
+
+    if ssh_host_websocket is None:
+        ssh_host_websocket = websocket
+        print(
+            f"SSH Host connected from {websocket.remote_address[0] + ':' + str(websocket.remote_address[1])}"
+        )
+        try:
+            await websocket.wait_closed()
+        finally:
+            ssh_host_websocket = None
+            if client_websocket is not None:
+                await client_websocket.close()
+                client_websocket = None
+            print(
+                f"SSH Host disconnected from {websocket.remote_address[0] + ':' + str(websocket.remote_address[1])}"
+            )
+    elif client_websocket is None:
+        client_websocket = websocket
+        print(
+            f"Client connected from {websocket.remote_address[0] + ':' + str(websocket.remote_address[1])}"
+        )
+        try:
+            await websocket.wait_closed()
+        finally:
+            client_websocket = None
+            if ssh_host_websocket is not None:
+                await ssh_host_websocket.close()
+                ssh_host_websocket = None
+            print(
+                f"Client disconnected from {websocket.remote_address[0] + ':' + str(websocket.remote_address[1])}"
+            )
+
+
+async def main():
+    print("Ready!\n")
+    async with websockets.serve(
+        handle_client, INTERMEDIARY_SERVER_IP, INTERMEDIARY_SERVER_PORT
+    ):
+        asyncio.ensure_future(forward_to_ssh_host())
+        asyncio.ensure_future(forward_to_client())
+        await asyncio.Future()
+
+
+asyncio.run(main())
