@@ -102,7 +102,7 @@ class Host:
         # Connect to the Intermediary Server
         url = "ws"
         if self.use_wss:
-            self.url += "s"
+            url += "s"
         url += "://" + self.intermediary_ip
         if not url.endswith("/"):
             url += "/"
