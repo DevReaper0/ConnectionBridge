@@ -148,7 +148,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 3:
         client_server.client_server_ip = sys.argv[3]
     if len(sys.argv) > 4:
-        client_server.client_server_port = sys.argv[4]
+        client_server.client_server_port = int(sys.argv[4])
     if len(sys.argv) > 5:
         client_server.use_wss = bool(sys.argv[5])
     if len(sys.argv) > 6:
